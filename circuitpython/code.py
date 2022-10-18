@@ -33,7 +33,7 @@ display.show(splash)
 # Draw a label
 text = "Hydrate-o-matic"
 text_area = label.Label(
-    terminalio.FONT, text=text, color=0xffffff, x=120, y=HEIGHT // 2 - 1
+    terminalio.FONT, text=text, color=0xffffff, x=20, y=HEIGHT // 2 - 1
 )
 splash.append(text_area)
 
@@ -83,6 +83,7 @@ def displayMsg(msgs):
 
 from digitalio import DigitalInOut, Direction, Pull
 
+# buttons Left and Right
 btnL = DigitalInOut(board.D4)
 btnL.direction = Direction.INPUT
 btnL.pull = Pull.UP
@@ -95,7 +96,6 @@ pixel_pin = board.NEOPIXEL
 num_pixels = 1
 
 pixels = neopixel.NeoPixel(pixel_pin, num_pixels, brightness=0.1, auto_write=False)
-
 
 # Instantiate 24-bit load sensor ADC; two channels, default gain of 128
 nau7802 = NAU7802(board.I2C(), address=0x2A, active_channels=2)
@@ -134,8 +134,6 @@ def reDisplayMsg():
         displayMsg(["Great, all caught up"])
     if last_state == "red":
         displayMsg(["Time to take a sip"])
-
-
 
 def guard_timed(last, interval, t):
     return last + interval < t
@@ -265,6 +263,8 @@ while True:
             h['fn'](this_s)
             h['last'] = this_s
 
+    if not btnL.value:
+        displayMsg(["Target", "hydration rate:", " {:+.2f} g/min".format(slope)])
     if not btnR.value:
         reDisplayMsg()
 
