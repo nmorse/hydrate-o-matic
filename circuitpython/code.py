@@ -1,7 +1,5 @@
 # hydrate-o-matic
 # circuitpython 7.3.2
-
-
 import time
 import board
 import neopixel
@@ -90,6 +88,11 @@ btnL.pull = Pull.UP
 btnR = DigitalInOut(board.D5)
 btnR.direction = Direction.INPUT
 btnR.pull = Pull.UP
+btnL_state = '' # ['', 'click', 'long-press', 'dbl_click']
+btnR_state = ''
+btnL_acc_state = 0 # accumulate button down observations 
+btnR_acc_state = 0
+
 
 
 pixel_pin = board.NEOPIXEL
@@ -169,20 +172,43 @@ def screen_off(t) :
     print("display off")
     display.show(darkGroup)
 
+def check_buttons(t):
+    global btnL_acc_state, btnL_state, btnR_acc_state, btnR_state
+    if not btnL.value:
+        btnL_acc_state += 1
+    else :
+        if btnL_acc_state > 1 and btnL_state == '':
+            btnL_state = 'click'
+            btnL_acc_state = 0
+    if not btnR.value:
+        btnR_acc_state += 1
+    else :
+        if btnR_acc_state > 1 and btnR_state == '':
+            btnR_state = 'click'
+            btnR_acc_state = 0
+
 def checkVal(t):
-    global ledMode, ledColor, slope
-    value = read_raw_value()
+    global ledMode, ledColor, level
+    level = read_raw_value()
     # the classic y = m * x + b
     yIntercept = slope * t + top
     # print("raw value: %7.0f yIntercept: %7.0f" % (value, yIntercept))
-    if value > yIntercept:
+    if level > yIntercept:
         ledMode = "flash"
         ledColor = (255, 0, 0)
     else:
         ledMode = "steady"
         ledColor = (0, 255, 0)
 
-happenings = [{
+happenings = [
+{
+    'id': "button_state",
+    'guard': guard_timed,
+    'interval': 0,
+    'last': 0.0,
+    'fn': check_buttons
+},
+{
     'id': "checkVal",
     'guard': guard_timed,
     'interval': 2.0,
@@ -211,7 +237,13 @@ happenings = [{
     'fn': screen_off
 }
 ]
+def findSlope(top, bottom, duration_seconds) :
+    return (bottom - top)/duration_seconds
+def findDuration(top, bottom, slope) :
+    return (bottom - top)/slope
 
+
+# start up 
 boot_s = time.monotonic()
 
 # Instantiate and calibrate load cell inputs
@@ -232,6 +264,7 @@ zero_channel()  # Calibrate and zero channel
 displayMsg(["Ready: Place water", "bottle on scale"])
 print("READY")
 top = 0 # 520000
+level = 0
 bottom = 100000 # weight of empty water bottle
 
 # initial measure of full water bottle
@@ -248,7 +281,7 @@ while top < bottom :
         top /= samples
 
 duration_seconds = 60 * 60 * 2.5 # some hours
-slope = -1.0 * (top - bottom)/duration_seconds
+slope = findSlope(top, bottom, duration_seconds)
 ### Main loop: Read load cells and calculate red green status
 ledMode = "steady"
 led = "flash off"
@@ -263,9 +296,13 @@ while True:
             h['fn'](this_s)
             h['last'] = this_s
 
-    if not btnL.value:
-        displayMsg(["Target", "hydration rate:", " {:+.2f} g/min".format(slope)])
-    if not btnR.value:
+    if btnL_state == 'click':
+        btnL_state = ''
+        # displayMsg(["Target", "hydration rate:", " {:+.2f} g/min".format(slope)])
+        displayMsg(["remaining duration", " {:+.2f} minutes".format(findDuration(level, bottom, slope)/60)])
+        
+    if btnR_state == 'click':
+        btnR_state = ''
         reDisplayMsg()
 
     time.sleep(0.05)
