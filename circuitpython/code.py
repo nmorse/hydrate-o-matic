@@ -82,10 +82,10 @@ def displayMsg(msgs):
 from digitalio import DigitalInOut, Direction, Pull
 
 # buttons Left and Right
-btnL = DigitalInOut(board.D4)
+btnL = DigitalInOut(board.A3)
 btnL.direction = Direction.INPUT
-btnL.pull = Pull.UP
-btnR = DigitalInOut(board.D5)
+btnL.pull = Pull.DOWN
+btnR = DigitalInOut(board.D2)
 btnR.direction = Direction.INPUT
 btnR.pull = Pull.UP
 btnL_state = '' # ['', 'click', 'long-press', 'dbl_click']
@@ -174,16 +174,30 @@ def screen_off(t) :
 
 def check_buttons(t):
     global btnL_acc_state, btnL_state, btnR_acc_state, btnR_state
-    if not btnL.value:
+    if btnL.value:
+        if btnL_acc_state == 13 and btnL_state == '':
+            print("left button long", btnL_acc_state)
+            btnL_state = 'long-click'
+            # btnL_acc_state = 0
         btnL_acc_state += 1
     else :
-        if btnL_acc_state > 1 and btnL_state == '':
+        if btnL_acc_state > 12 and btnL_state == '':
+            btnL_acc_state = 0
+        if btnL_acc_state > 1 and btnL_acc_state <= 12 and btnL_state == '':
+            print("left button", btnL_acc_state)
             btnL_state = 'click'
             btnL_acc_state = 0
     if not btnR.value:
+        if btnR_acc_state == 13 and btnR_state == '':
+            print("right button long", btnR_acc_state)
+            btnR_state = 'long-click'
+            # btnR_acc_state = 0
         btnR_acc_state += 1
     else :
-        if btnR_acc_state > 1 and btnR_state == '':
+        if btnR_acc_state > 12 and btnR_state == '':
+            btnR_acc_state = 0
+        if btnR_acc_state > 1 and btnR_acc_state <= 12 and btnR_state == '':
+            print("right button", btnR_acc_state)
             btnR_state = 'click'
             btnR_acc_state = 0
 
@@ -301,9 +315,20 @@ while True:
         # displayMsg(["Target", "hydration rate:", " {:+.2f} g/min".format(slope)])
         displayMsg(["remaining duration", " {:+.2f} minutes".format(findDuration(level, bottom, slope)/60)])
         
+    if btnL_state == 'long-click':
+        btnL_state = ''
+        displayMsg(["Target", "hydration rate:", " {:+.2f} g/min".format(slope)])
+        # displayMsg(["remaining duration", " {:+.2f} minutes".format(findDuration(level, bottom, slope)/60)])
+        
     if btnR_state == 'click':
         btnR_state = ''
         reDisplayMsg()
+
+    if btnR_state == 'long-click':
+        btnR_state = ''
+        display.show(graph)
+        touchEventTimer("screen_off_timer")
+
 
     time.sleep(0.05)
 # why the "Code stopped by auto-reload. Reloading soon." randomly?
