@@ -45,9 +45,25 @@ color_palette2[0] = 0x000000
 bg_sprite2 = displayio.TileGrid(color_bitmap2, pixel_shader=color_palette2, x=0, y=0)
 graph.append(bg_sprite2)
 # draw a line
-graph.append(Line(10, 0, 117, 31, 0xffffff))
-graph.append(Line(10, 0, 36, 0, 0xffffff))
-graph.append(Line(36, 0, 36, 10, 0xffffff))
+# graph.append(Line(0, 0, 127, 31, 0xffffff))
+lastX = 0
+lastY = 0
+
+def mapRange(val, in_min, in_max, out_min, out_max) :
+  return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+
+def addLine(t, level):
+    global lastX, lastY
+    if level < bottom :
+        return
+    toX = int(mapRange( t, 0, duration_seconds, 0, 127))
+    if not toX > lastX + 2 :
+        return
+    toY = int(mapRange(level, bottom, top, 31, 0))
+    print(lastX, lastY, toX, toY)
+    graph.append(Line(lastX, lastY, toX, toY, 0xffffff))
+    lastX = toX
+    lastY = toY
 
 # Make the display context
 darkGroup = displayio.Group()
@@ -204,6 +220,7 @@ def check_buttons(t):
 def checkVal(t):
     global ledMode, ledColor, level
     level = read_raw_value()
+    addLine(t, level)
     # the classic y = m * x + b
     yIntercept = slope * t + top
     # print("raw value: %7.0f yIntercept: %7.0f" % (value, yIntercept))
@@ -275,27 +292,34 @@ time.sleep(3)
 nau7802.channel = 1
 zero_channel()  # Calibrate and zero channel
 
-displayMsg(["Ready: Place water", "bottle on scale"])
-print("READY")
-top = 0 # 520000
+def setTop (bottom):
+    displayMsg(["Ready: Place full", "water bottle on", "  the scale :)"])
+    print("READY")
+    top = 0 # 520000
+    # initial measure of full water bottle
+    pixels[0] = (0, 0, 255)
+    pixels.show()
+    while top < bottom :
+        top = 0
+        samples = 5
+        if read_raw_value() > bottom :
+            time.sleep(0.25)
+            for i in range(0, samples):
+                top += read_raw_value()
+                time.sleep(0.05)
+            top /= samples
+    return top
+
 level = 0
 bottom = 100000 # weight of empty water bottle
+top = setTop(bottom)
 
-# initial measure of full water bottle
-pixels[0] = (0, 0, 255)
-pixels.show()
-while top < bottom :
-    top = 0
-    samples = 5
-    if read_raw_value() > bottom :
-        time.sleep(0.25)
-        for i in range(0, samples):
-            top += read_raw_value()
-            time.sleep(0.05)
-        top /= samples
+# duration_seconds = 60 * 60 * 2.5 # some hours
+# slope = findSlope(top, bottom, duration_seconds)
+slope = -40.0
+duration_seconds = findDuration(top, bottom, slope)
 
-duration_seconds = 60 * 60 * 2.5 # some hours
-slope = findSlope(top, bottom, duration_seconds)
+
 ### Main loop: Read load cells and calculate red green status
 ledMode = "steady"
 led = "flash off"
@@ -312,13 +336,11 @@ while True:
 
     if btnL_state == 'click':
         btnL_state = ''
-        # displayMsg(["Target", "hydration rate:", " {:+.2f} g/min".format(slope)])
-        displayMsg(["remaining duration", " {:+.2f} minutes".format(findDuration(level, bottom, slope)/60)])
+        displayMsg([" Time to empty", " {:.2f} minutes".format(findDuration(level, bottom, slope)/60)])
         
     if btnL_state == 'long-click':
         btnL_state = ''
-        displayMsg(["Target", "hydration rate:", " {:+.2f} g/min".format(slope)])
-        # displayMsg(["remaining duration", " {:+.2f} minutes".format(findDuration(level, bottom, slope)/60)])
+        displayMsg(["Hydration rate:", " {:+.2f} g/min".format(slope)])
         
     if btnR_state == 'click':
         btnR_state = ''
