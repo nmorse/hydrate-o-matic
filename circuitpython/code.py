@@ -1,4 +1,4 @@
-# hydrate-o-matic
+# hydrate-o-matic hydrate-glide-path
 # circuitpython 7.3.2
 import time
 import board
@@ -29,7 +29,7 @@ display = adafruit_displayio_ssd1306.SSD1306(display_bus, width=WIDTH, height=HE
 splash = displayio.Group()
 display.show(splash)
 # Draw a label
-text = "Hydrate-o-matic"
+text = "hydrate-glide-path"
 text_area = label.Label(
     terminalio.FONT, text=text, color=0xffffff, x=20, y=HEIGHT // 2 - 1
 )
@@ -106,10 +106,8 @@ btnR.direction = Direction.INPUT
 btnR.pull = Pull.UP
 btnL_state = '' # ['', 'click', 'long-press', 'dbl_click']
 btnR_state = ''
-btnL_acc_state = 0 # accumulate button down observations 
-btnR_acc_state = 0
-
-
+btnL_acc_s = 0 # accumulate button down seconds 
+btnR_acc_s = 0
 
 pixel_pin = board.NEOPIXEL
 num_pixels = 1
@@ -153,12 +151,25 @@ def reDisplayMsg():
         displayMsg(["Great, all caught up"])
     if last_state == "red":
         displayMsg(["Time to take a sip"])
+    if last_state == "sipping":
+        displayMsg(["Sip", "then place back", "on scale"])
 
 def guard_timed(last, interval, t):
     return last + interval < t
 
 def guard_on_flash_timed(last, interval, t):
     return ledMode == "flash" and guard_timed(last, interval, t)
+
+def guard_on_sipping(last, interval, t):
+    return ledMode == "sipping" and guard_timed(last, interval, t)
+
+def sipping(t):
+    global last_state
+    if last_state != "sipping":
+        displayMsg(["Sip", "then place back", "on scale"])
+        last_state = "sipping"
+    pixels[0] = (0, 0, 0)
+    pixels.show()
 
 def guard_on_steady(last, interval, t):
     return ledMode == "steady" and guard_timed(last, interval, t)
@@ -188,37 +199,41 @@ def screen_off(t) :
     print("display off")
     display.show(darkGroup)
 
+long_press_s = 0.9
 def check_buttons(t):
-    global btnL_acc_state, btnL_state, btnR_acc_state, btnR_state
-    if btnL.value:
-        if btnL_acc_state == 13 and btnL_state == '':
-            print("left button long", btnL_acc_state)
+    global btnL_acc_s, btnL_state, btnR_acc_s, btnR_state
+    if btnL.value: # button down
+        if btnL_acc_s > 0.0 and (btnL_acc_s + long_press_s) < t and btnL_state == '':
+            # print("left button long", (btnL_acc_s + long_press_s), t)
             btnL_state = 'long-click'
-            # btnL_acc_state = 0
-        btnL_acc_state += 1
-    else :
-        if btnL_acc_state > 12 and btnL_state == '':
-            btnL_acc_state = 0
-        if btnL_acc_state > 1 and btnL_acc_state <= 12 and btnL_state == '':
-            print("left button", btnL_acc_state)
+            btnL_acc_s = -1.0
+        if btnL_acc_s == 0.0 :
+            btnL_acc_s = t            
+    else : # button up
+        if btnL_acc_s == -1.0 and btnL_state == '':
+            btnL_acc_s = 0.0
+        if btnL_acc_s > 0.0 and (btnL_acc_s + long_press_s) >= t and btnL_state == '':
+            # print("left button", btnL_acc_s, t)
             btnL_state = 'click'
-            btnL_acc_state = 0
-    if not btnR.value:
-        if btnR_acc_state == 13 and btnR_state == '':
-            print("right button long", btnR_acc_state)
+            btnL_acc_s = 0.0
+    
+    if not btnR.value: # button down
+        if btnR_acc_s > 0.0 and (btnR_acc_s + long_press_s) < t and btnR_state == '':
+            # print("right button long", btnR_acc_s, t)
             btnR_state = 'long-click'
-            # btnR_acc_state = 0
-        btnR_acc_state += 1
-    else :
-        if btnR_acc_state > 12 and btnR_state == '':
-            btnR_acc_state = 0
-        if btnR_acc_state > 1 and btnR_acc_state <= 12 and btnR_state == '':
-            print("right button", btnR_acc_state)
+            btnR_acc_s = -1.0
+        if btnR_acc_s == 0.0 :
+            btnR_acc_s = t
+    else : # button up
+        if btnR_acc_s == -1.0 and btnR_state == '':
+            btnR_acc_s = 0.0
+        if btnR_acc_s > 0.0 and (btnR_acc_s + long_press_s) >= t and btnR_state == '':
+            # print("right button", btnR_acc_s, t)
             btnR_state = 'click'
-            btnR_acc_state = 0
+            btnR_acc_s = 0.0
 
 def checkVal(t):
-    global ledMode, ledColor, level
+    global ledMode, level
     level = read_raw_value()
     addLine(t, level)
     # the classic y = m * x + b
@@ -226,10 +241,12 @@ def checkVal(t):
     # print("raw value: %7.0f yIntercept: %7.0f" % (value, yIntercept))
     if level > yIntercept:
         ledMode = "flash"
-        ledColor = (255, 0, 0)
-    else:
+        return
+    if level > bottom:
         ledMode = "steady"
-        ledColor = (0, 255, 0)
+        return
+    ledMode = "sipping"
+
 
 happenings = [
 {
@@ -259,6 +276,13 @@ happenings = [
     'interval': 0.3,
     'last': 0.0,
     'fn': green_on
+},
+{
+    'id': "sipping",
+    'guard': guard_on_sipping,
+    'interval': 0.3,
+    'last': 0.0,
+    'fn': sipping
 },
 {
     'id': "screen_off_timer",
@@ -352,5 +376,5 @@ while True:
         touchEventTimer("screen_off_timer")
 
 
-    time.sleep(0.05)
+    time.sleep(0.02)
 # why the "Code stopped by auto-reload. Reloading soon." randomly?
