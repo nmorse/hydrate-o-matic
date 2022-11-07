@@ -153,6 +153,8 @@ def reDisplayMsg():
         displayMsg(["Time to take a sip"])
     if last_state == "sipping":
         displayMsg(["Sip", "then place back", "on scale"])
+    if last_state == "end":
+        displayMsg(["times up", "Hold down the left", "button to restart"])
 
 def guard_timed(last, interval, t):
     return last + interval < t
@@ -165,7 +167,7 @@ def guard_on_sipping(last, interval, t):
 
 def sipping(t):
     global last_state
-    if last_state != "sipping":
+    if last_state != "sipping" and last_state != "end":
         displayMsg(["Sip", "then place back", "on scale"])
         last_state = "sipping"
     pixels[0] = (0, 0, 0)
@@ -176,7 +178,7 @@ def guard_on_steady(last, interval, t):
 
 def green_on(t):
     global last_state
-    if last_state != "green":
+    if last_state != "green" and last_state != "end":
         displayMsg(["Great, all caught up"])
         last_state = "green"
     pixels[0] = (0, 255, 0)
@@ -184,7 +186,7 @@ def green_on(t):
 
 def red_toggle(t):
     global led, last_state
-    if last_state != "red":
+    if last_state != "red" and last_state != "end":
         displayMsg(["Time to take a sip"])
         last_state = "red"
     if led == "flash off":
@@ -233,7 +235,14 @@ def check_buttons(t):
             btnR_acc_s = 0.0
 
 def checkVal(t):
-    global ledMode, level
+    global ledMode, level, last_state
+    print("t > boot_s + duration_seconds", t, duration_seconds, (t > duration_seconds))
+    if t > duration_seconds:
+        ledMode = "end"
+        last_state = "end"
+        displayMsg(["times up", "Hold down the left", "button to restart"])
+        return
+
     level = read_raw_value()
     addLine(t, level)
     # the classic y = m * x + b
@@ -298,8 +307,7 @@ def findDuration(top, bottom, slope) :
     return (bottom - top)/slope
 
 
-# start up 
-boot_s = time.monotonic()
+
 
 # Instantiate and calibrate load cell inputs
 print("*** Instantiate and calibrate load cell")
@@ -307,6 +315,7 @@ print("*** Instantiate and calibrate load cell")
 enabled = nau7802.enable(True)
 print("Digital and analog power enabled:", enabled)
 
+boot_s = time.monotonic()
 pixels[0] = (128, 128, 128)
 pixels.show()
 print("REMOVE WEIGHTS FROM LOAD CELL")
@@ -316,40 +325,61 @@ time.sleep(3)
 nau7802.channel = 1
 zero_channel()  # Calibrate and zero channel
 
-def setTop (bottom):
-    displayMsg(["Ready: Place full", "water bottle on", "  the scale :)"])
-    print("READY")
-    top = 0 # 520000
-    # initial measure of full water bottle
-    pixels[0] = (0, 0, 255)
-    pixels.show()
-    while top < bottom :
-        top = 0
-        samples = 5
-        if read_raw_value() > bottom :
-            time.sleep(0.25)
-            for i in range(0, samples):
-                top += read_raw_value()
-                time.sleep(0.05)
-            top /= samples
-    return top
-
-level = 0
-bottom = 100000 # weight of empty water bottle
-top = setTop(bottom)
-
-# duration_seconds = 60 * 60 * 2.5 # some hours
-# slope = findSlope(top, bottom, duration_seconds)
+bottom = 10000
+top = 20000
 slope = -40.0
-duration_seconds = findDuration(top, bottom, slope)
-
-
-### Main loop: Read load cells and calculate red green status
+duration_seconds = 10
 ledMode = "steady"
 led = "flash off"
 ledColor = (0,0,0)
 last_state = "init"
 
+def setTop (bottom):
+    displayMsg(["Ready: Place full", "water bottle on", "  the scale :)"])
+    print("READY")
+    tp = 0
+    # measure of full water bottle
+    pixels[0] = (0, 0, 255)
+    pixels.show()
+    while tp < bottom :
+        tp = 0
+        samples = 5
+        if read_raw_value() > bottom :
+            time.sleep(0.25)
+            for i in range(0, samples):
+                tp += read_raw_value()
+                time.sleep(0.05)
+            tp /= samples
+    return tp
+
+def startInit():
+    global btnL_state, btnR_state, btnL_acc_s, btnR_acc_s, level, bottom, top, slope, duration_seconds, ledMode, led, ledColor, last_state, lastX, lastY
+    btnL_state = '' # ['', 'click', 'long-press', 'dbl_click']
+    btnR_state = ''
+    btnL_acc_s = 0 # accumulate button down seconds 
+    btnR_acc_s = 0
+    ledMode = "steady"
+    led = "flash off"
+    ledColor = (0,0,0)
+    last_state = "init"
+    # start up 
+    level = 0
+    bottom = 10000
+    top = setTop(bottom)
+    # duration_seconds = 60 * 60 * 2.5 # some hours
+    # slope = findSlope(top, bottom, duration_seconds)
+    slope = -1040.0
+    duration_seconds = findDuration(top, bottom, slope)
+    ### Main loop: Read load cells and calculate red green status
+    while(len(graph) > 0):
+        graph.pop()
+    lastX = 0
+    lastY = 0
+    for h in happenings:
+        h['last'] = 0.0
+    return time.monotonic()
+
+boot_s = startInit()
 
 while True:
     this_s = time.monotonic() - boot_s
@@ -360,11 +390,14 @@ while True:
 
     if btnL_state == 'click':
         btnL_state = ''
-        displayMsg([" Time to empty", " {:.2f} minutes".format(findDuration(level, bottom, slope)/60)])
+        displayMsg([" Time to empty", " {:.2f} minutes".format((time.monotonic() - duration_seconds - boot_s)/60)])
         
     if btnL_state == 'long-click':
         btnL_state = ''
-        displayMsg(["Hydration rate:", " {:+.2f} g/min".format(slope)])
+        if last_state == 'end':
+            boot_s = startInit()
+        else:
+            displayMsg(["Hydration rate:", " {:+.2f} g/min".format(slope)])
         
     if btnR_state == 'click':
         btnR_state = ''
