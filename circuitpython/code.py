@@ -368,7 +368,7 @@ def startInit():
     top = setTop(bottom)
     # duration_seconds = 60 * 60 * 2.5 # some hours
     # slope = findSlope(top, bottom, duration_seconds)
-    slope = -1040.0
+    slope = -40.0
     duration_seconds = findDuration(top, bottom, slope)
     ### Main loop: Read load cells and calculate red green status
     while(len(graph) > 0):

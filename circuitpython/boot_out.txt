@@ -1,0 +1,2 @@
+Adafruit CircuitPython 7.3.3 on 2022-08-29; SparkFun Pro Micro RP2040 with rp2040
+Board ID:sparkfun_pro_micro_rp2040
