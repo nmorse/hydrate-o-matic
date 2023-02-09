@@ -1,15 +1,11 @@
 import asyncio
-import statemachine
-from states import hydrominder_states
+from statemachine import xstate_interpreter
+from states import hydrominder_states, time_out_click
 
-async def toggle_timer(rate):
-    while True:
-        await asyncio.sleep(rate)
-        statemachine.enqueue("toggle")
 
 async def main():
-    async_statemachine = asyncio.create_task(statemachine.xstate_interpreter(hydrominder_states))
-    async_timer_message = asyncio.create_task(toggle_timer(0.5))
+    async_statemachine = asyncio.create_task(xstate_interpreter(hydrominder_states))
+    async_timer_message = asyncio.create_task(time_out_click())
     await asyncio.gather(async_statemachine, async_timer_message)
 
 asyncio.run(main())

@@ -1,4 +1,5 @@
-import asyncio as asyncio
+import asyncio
+from states import fn_map
 
 queue = []  
 # add an element to the queue
@@ -28,9 +29,10 @@ def getState(states, state_name):
 # an interpreter for xstate/statley.ai statemachines (note: only basic features are handled)
 async def xstate_interpreter(state_machine):
     state_name = state_machine["initial"]
+    print ("state init to", state_name)
     state = getState(state_machine["states"], state_name)
     if state != None and "entry" in state:
-        state["entry"](state)
+        fn_map[state["entry"]](state)
     while state != None:
         msg = dequeue()
         if msg != None:
@@ -40,9 +42,12 @@ async def xstate_interpreter(state_machine):
                     state["exit"](state)
                 last_state_name = state_name
                 # now make the jump to the next state
+                print ("state transition to", t["target"])
                 state_name = t["target"]
                 state = getState(state_machine["states"], state_name)
                 if state != None and (state_name != last_state_name) and "entry" in state:
                     state["entry"](state)
+            else:
+                print("no transition for", msg)
         await asyncio.sleep(0)
     print("Error: No state ", state_name, " found")

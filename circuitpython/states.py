@@ -1,9 +1,12 @@
 # hydrate-o-matic hydrate-glide-path
-# circuitpython 7.3.2
+# circuitpython 8.0
+import asyncio
 import time
 import board
 import neopixel
 from cedargrove_nau7802 import NAU7802
+
+import statemachine
 
 import displayio
 import terminalio
@@ -11,46 +14,60 @@ from adafruit_display_text import label
 from adafruit_display_shapes.line import Line
 import adafruit_displayio_ssd1306
 
-displayio.release_displays()
-
-oled_reset = board.D9
-
-# Use for I2C
-i2c = board.I2C()
-display_bus = displayio.I2CDisplay(i2c, device_address=0x3C, reset=oled_reset)
-
-WIDTH = 128
-HEIGHT = 32  # Change to 64 if needed
-BORDER = 1
-
-display = adafruit_displayio_ssd1306.SSD1306(display_bus, width=WIDTH, height=HEIGHT)
-
-# Make a splash display Group
-splash = displayio.Group()
-display.show(splash)
-# Draw a label
-text = "hydrate-glide-path"
-text_area = label.Label(
-    terminalio.FONT, text=text, color=0xffffff, x=20, y=HEIGHT // 2 - 1
-)
-splash.append(text_area)
-
-# Make a graph display Group 
-graph = displayio.Group()
-
-color_bitmap2 = displayio.Bitmap(WIDTH, HEIGHT, 1)
-color_palette2 = displayio.Palette(1)
-color_palette2[0] = 0x000000 
-
-bg_sprite2 = displayio.TileGrid(color_bitmap2, pixel_shader=color_palette2, x=0, y=0)
-graph.append(bg_sprite2)
-# draw a line
-# graph.append(Line(0, 0, 127, 31, 0xffffff))
 lastX = 0
 lastY = 0
+display = None
+graph = None
+splash = None
+darkGroup = None
+i2c = board.I2C()
+WIDTH = 128
+HEIGHT = 32  # Change to 64 if needed
+time_out = 0
+
+def initDisplay() :
+    global lastX, lastY, graph, darkGroup, splash, display
+    displayio.release_displays()
+    oled_reset = board.D9
+
+    # Use for I2C
+    display_bus = displayio.I2CDisplay(i2c, device_address=0x3C, reset=oled_reset)
+
+    display = adafruit_displayio_ssd1306.SSD1306(display_bus, width=WIDTH, height=HEIGHT)
+
+    # Make a splash display Group
+    splash = displayio.Group()
+    display.show(splash)
+    # Draw a label
+    text = "hydrate-glide-path"
+    text_area = label.Label(
+        terminalio.FONT, text=text, color=0xffffff, x=20, y=HEIGHT // 2 - 1
+    )
+    splash.append(text_area)
+
+    # Make a graph display Group 
+    graph = displayio.Group()
+
+    color_bitmap2 = displayio.Bitmap(WIDTH, HEIGHT, 1)
+    color_palette2 = displayio.Palette(1)
+    color_palette2[0] = 0x000000 
+
+    bg_sprite2 = displayio.TileGrid(color_bitmap2, pixel_shader=color_palette2, x=0, y=0)
+    graph.append(bg_sprite2)
+    # draw a line
+    # graph.append(Line(0, 0, 127, 31, 0xffffff))
+    lastX = 0
+    lastY = 0
+    # Make the display context
+    darkGroup = displayio.Group()
+    bg_sprite3 = displayio.TileGrid(color_bitmap2, pixel_shader=color_palette2, x=0, y=0)
+    darkGroup.append(bg_sprite3)
+
+    bg_sprite2 = displayio.TileGrid(color_bitmap2, pixel_shader=color_palette2, x=0, y=0)
+
 
 def mapRange(val, in_min, in_max, out_min, out_max) :
-  return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+    return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 
 def addLine(t, level):
     global lastX, lastY
@@ -65,22 +82,13 @@ def addLine(t, level):
     lastX = toX
     lastY = toY
 
-# Make the display context
-darkGroup = displayio.Group()
-bg_sprite3 = displayio.TileGrid(color_bitmap2, pixel_shader=color_palette2, x=0, y=0)
-darkGroup.append(bg_sprite3)
 
-bg_sprite2 = displayio.TileGrid(color_bitmap2, pixel_shader=color_palette2, x=0, y=0)
-
-def touchEventTimer(happeningId) :
-    global happenings, boot_s    
-    for h in happenings:
-        if h["id"] == happeningId:
-            h["last"] = time.monotonic() - boot_s
-            return
-    print("happening Id", happeningId, "not found")
+def touchTimeOut() :
+    global time_out
+    time_out = 0
 
 def displayMsg(msgs):
+    global splash
     print(msgs)
     messages = len(msgs)
     while len(splash) :
@@ -93,7 +101,7 @@ def displayMsg(msgs):
         splash.append(text_area)
         i += 1
     display.show(splash)
-    touchEventTimer("screen_off_timer")
+    touchTimeOut()
 
 from digitalio import DigitalInOut, Direction, Pull
 
@@ -257,73 +265,30 @@ def checkVal(t):
     ledMode = "sipping"
 
 
-happenings = [
-{
-    'id': "button_state",
-    'guard': guard_timed,
-    'interval': 0,
-    'last': 0.0,
-    'fn': check_buttons
-},
-{
-    'id': "checkVal",
-    'guard': guard_timed,
-    'interval': 2.0,
-    'last': 0.0,
-    'fn': checkVal
-},
-{
-    'id': "red_toggle",
-    'guard': guard_on_flash_timed,
-    'interval': 0.5,
-    'last': 0.0,
-    'fn': red_toggle
-},
-{
-    'id': "green_on",
-    'guard': guard_on_steady,
-    'interval': 0.3,
-    'last': 0.0,
-    'fn': green_on
-},
-{
-    'id': "sipping",
-    'guard': guard_on_sipping,
-    'interval': 0.3,
-    'last': 0.0,
-    'fn': sipping
-},
-{
-    'id': "screen_off_timer",
-    'guard': guard_timed,
-    'interval': 30.0,
-    'last': 0.0,
-    'fn': screen_off
-}
-]
 def findSlope(top, bottom, duration_seconds) :
     return (bottom - top)/duration_seconds
 def findDuration(top, bottom, slope) :
     return (bottom - top)/slope
 
-
-
-
-# Instantiate and calibrate load cell inputs
-print("*** Instantiate and calibrate load cell")
-# Enable NAU7802 digital and analog power
-enabled = nau7802.enable(True)
-print("Digital and analog power enabled:", enabled)
+def initScale():
+    # Instantiate and calibrate load cell inputs
+    print("*** Instantiate and calibrate load cell")
+    # Enable NAU7802 digital and analog power
+    enabled = nau7802.enable(True)
+    print("Digital and analog power enabled:", enabled)
 
 boot_s = time.monotonic()
-pixels[0] = (128, 128, 128)
-pixels.show()
-print("REMOVE WEIGHTS FROM LOAD CELL")
-displayMsg(["REMOVE WEIGHTS", "FROM THE SCALE", "(0 reference weight)"])
-time.sleep(3)
 
-nau7802.channel = 1
-zero_channel()  # Calibrate and zero channel
+def zeroScale():
+    global pixels, nau7802
+    pixels[0] = (128, 128, 128)
+    pixels.show()
+    print("REMOVE WEIGHTS FROM LOAD CELL")
+    displayMsg(["REMOVE WEIGHTS", "FROM THE SCALE", "(0 reference weight)"])
+    time.sleep(3)
+
+    nau7802.channel = 1
+    zero_channel()  # Calibrate and zero channel
 
 bottom = 10000
 top = 20000
@@ -375,63 +340,169 @@ def startInit():
         graph.pop()
     lastX = 0
     lastY = 0
-    for h in happenings:
-        h['last'] = 0.0
-    return time.monotonic()
+    
 
-boot_s = startInit()
+async def time_out_click():
+    global time_out
+    while True:
+        await asyncio.sleep(0.1)
+        time_out += 1
+        if time_out > 100:
+            statemachine.enqueue("timeout")
+            time_out = 0
 
-while True:
-    this_s = time.monotonic() - boot_s
-    for h in happenings:
-        if h['guard'](h['last'], h['interval'], this_s) :
-            h['fn'](this_s)
-            h['last'] = this_s
+def initAll(_state):
+    initDisplay()
+    startInit()
+    statemachine.enqueue("done")
 
-    if btnL_state == 'click':
-        btnL_state = ''
-        displayMsg([" Time to empty", " {:.2f} minutes".format((time.monotonic() - duration_seconds - boot_s)/60)])
+fn_map = {
+    "init": initAll
+}
+# boot_s = startInit()
+
+# while True:
+#     this_s = time.monotonic() - boot_s
+#     for h in happenings:
+#         if h['guard'](h['last'], h['interval'], this_s) :
+#             h['fn'](this_s)
+#             h['last'] = this_s
+
+#     if btnL_state == 'click':
+#         btnL_state = ''
+#         displayMsg([" Time to empty", " {:.2f} minutes".format((time.monotonic() - duration_seconds - boot_s)/60)])
         
-    if btnL_state == 'long-click':
-        btnL_state = ''
-        if last_state == 'end':
-            boot_s = startInit()
-        else:
-            displayMsg(["Hydration rate:", " {:+.2f} g/min".format(slope)])
+#     if btnL_state == 'long-click':
+#         btnL_state = ''
+#         if last_state == 'end':
+#             boot_s = startInit()
+#         else:
+#             displayMsg(["Hydration rate:", " {:+.2f} g/min".format(slope)])
         
-    if btnR_state == 'click':
-        btnR_state = ''
-        reDisplayMsg()
+#     if btnR_state == 'click':
+#         btnR_state = ''
+#         reDisplayMsg()
 
-    if btnR_state == 'long-click':
-        btnR_state = ''
-        display.show(graph)
-        touchEventTimer("screen_off_timer")
-
-
-    time.sleep(0.02)
+#     if btnR_state == 'long-click':
+#         btnR_state = ''
+#         display.show(graph)
+#         touchEventTimer("screen_off_timer")
 
 
+#     time.sleep(0.02)
 
 hydrominder_states = {
-  "id": "blinky",
-  "initial": "led_off",
-  "states": {
-    "led_off": {
-      "entry": turn_off_led,
-      "on": {
-        "toggle": {
-          "target": "led_on"
+    "id": "Hydrate-U",
+    "initial": "startup",
+    "states": {
+        "startup": {
+            "entry": "init",
+            "on": {
+                "done": {
+                    "target": "zero out the scale"
+                }
+            }
+        },
+        "zero out the scale": {
+            "on": {
+                "timer": {
+                    "target": "measure"
+                }
+            }
+        },
+        "measure": {
+            "on": {
+                "done": {
+                    "target": "record zero"
+                }
+            }
+        },
+        "record zero": {
+            "on": {
+                "done": {
+                    "target": "show status"
+                }
+            }
+        },
+        "show status": {
+            "on": {
+                "timeout": {
+                    "target": "blank screen"
+                },
+                "button_b": {
+                    "target": "menu"
+                },
+                "long_button_b": {
+                    "target": "show graph"
+                },
+                "long_button_a": {
+                    "target": "time left"
+                }
+            }
+        },
+        "blank screen": {
+            "on": {
+                "button_b": {
+                    "target": "menu"
+                },
+                "button_a": {
+                    "target": "show status"
+                }
+            }
+        },
+        "menu": {
+            "on": {
+                "button_b": {
+                    "target": "measure empty container"
+                },
+                "long_button_a": {
+                    "target": "zero out the scale"
+                },
+                "button_a": {
+                    "target": "show status"
+                }
+            }
+        },
+        "measure empty container": {
+            "on": {
+                "timer": {
+                    "target": "measure2"
+                }
+            }
+        },
+        "measure2": {
+            "on": {
+                "done": {
+                    "target": "record empty"
+                }
+            }
+        },
+        "record empty": {
+            "on": {
+                "done": {
+                    "target": "show status"
+                }
+            }
+        },
+        "show graph": {
+            "on": {
+                "timeout": {
+                    "target": "blank screen"
+                },
+                "button_a": {
+                    "target": "show status"
+                }
+            }
+        },
+        "time left": {
+            "on": {
+                "timeout": {
+                    "target": "blank screen"
+                },
+                "button_a": {
+                    "target": "show status"
+                }
+            }
         }
-      }
-    },
-    "led_on": {
-      "entry": turn_on_led,
-      "on": {
-        "toggle": {
-          "target": "led_off"
-        }
-      }
     }
-  }
 }
